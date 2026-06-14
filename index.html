@@ -1,0 +1,424 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flappy Bird Pro</title>
+
+<style>
+body{
+    margin:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    background:linear-gradient(#4ec0ca,#dff6ff);
+    overflow:hidden;
+    font-family:Arial, sans-serif;
+}
+
+/* Screen shake effect on collision */
+@keyframes shake {
+  0% { transform: translate(0,0); }
+  25% { transform: translate(4px,-4px); }
+  50% { transform: translate(-4px,4px); }
+  75% { transform: translate(4px,4px); }
+  100% { transform: translate(0,0); }
+}
+
+canvas{
+    border-radius:12px;
+    border:3px solid rgba(0,0,0,0.5);
+    box-shadow:0 10px 30px rgba(0,0,0,0.4);
+}
+
+#score{
+    position:absolute;
+    top:20px;
+    font-size:42px;
+    color:white;
+    text-shadow:2px 2px 6px black;
+    z-index: 10;
+}
+
+#gameOver{
+    position:absolute;
+    display:none;
+    color:white;
+    text-align:center;
+    background: rgba(0,0,0,0.65);
+    padding: 25px 40px;
+    border-radius: 16px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    animation: fadeIn 0.4s ease;
+    z-index: 20;
+}
+
+@keyframes fadeIn{
+    from{opacity:0; transform:scale(0.8);}
+    to{opacity:1; transform:scale(1);}
+}
+
+button{
+    padding:12px 24px;
+    border:none;
+    border-radius:8px;
+    background:#ffcc00;
+    color: #222;
+    font-weight:bold;
+    font-size: 16px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+button:hover {
+    background: #ffe066;
+    transform: scale(1.05);
+}
+</style>
+</head>
+
+<body>
+
+<div id="score">0</div>
+
+<div id="gameOver">
+    <h1 style="margin-top:0; margin-bottom:15px;">💀 Game Over</h1>
+    <button onclick="restart()">Restart</button>
+</div>
+
+<canvas id="game" width="400" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let bird, pipes, clouds, score, running;
+let pipeTimer = null;
+let groundOffset = 0; // Tracks scrolling position of the ground textures
+
+// Snappy jump physics
+const gravity = 0.45;
+const flapPower = -7;
+const pipeWidth = 70;
+
+function reset(){
+    bird = { x:80, y:250, v:0, size:28 };
+    pipes = [];
+    clouds = [
+        {x:60,y:100,s:1},
+        {x:220,y:140,s:1.3},
+        {x:360,y:90,s:0.85}
+    ];
+    score = 0;
+    groundOffset = 0;
+    running = true;
+
+    document.getElementById("score").innerText = 0;
+    document.getElementById("gameOver").style.display = "none";
+    
+    if(pipeTimer) clearInterval(pipeTimer);
+    startPipeSpawner();
+}
+
+function startPipeSpawner() {
+    pipeTimer = setInterval(()=>{
+        if(running){
+            let currentGap = score >= 10 ? 130 : 175;
+            let minTop = score >= 10 ? 50 : 80;
+            let maxTopValue = score >= 10 ? 370 : 250;
+            
+            let top = Math.random() * maxTopValue + minTop;
+            
+            pipes.push({
+                x:400,
+                top,
+                bottom: top + currentGap,
+                passed: false
+            });
+        }
+    }, 1400);
+}
+
+reset();
+
+function update(){
+    if(!running) return;
+
+    bird.v += gravity;
+    bird.y += bird.v;
+
+    if(bird.y < 0) {
+        bird.y = 0;
+        bird.v = 0;
+    }
+    if(bird.y + bird.size > 548) end(); // Collision exactly at the grass line
+
+    // Shared speed variable to lock pipes and ground physics together
+    let currentSpeed = score >= 10 ? 4.2 : 2.8;
+
+    // Move the ground background at the exact same pace
+    groundOffset -= currentSpeed;
+    if (groundOffset <= -24) { 
+        groundOffset = 0; // Reset offset seamlessly to loop pattern texture
+    }
+
+    pipes.forEach(p=>{
+        p.x -= currentSpeed;
+
+        const hitX = bird.x + bird.size > p.x && bird.x < p.x + pipeWidth;
+        const hitY = bird.y < p.top || bird.y + bird.size > p.bottom;
+
+        if(hitX && hitY) end();
+
+        if(!p.passed && p.x + pipeWidth < bird.x){
+            p.passed = true;
+            score++;
+            document.getElementById("score").innerText = score;
+        }
+    });
+
+    pipes = pipes.filter(p=>p.x > -100);
+
+    clouds.forEach(c=>{
+        c.x -= 0.3 * c.s;
+        if(c.x < -120) c.x = 460;
+    });
+}
+
+function draw(){
+    /* SKY Gradient Background */
+    let skyGrad = ctx.createLinearGradient(0,0,0,600);
+    skyGrad.addColorStop(0,"#4ec0ca");
+    skyGrad.addColorStop(0.7,"#b4edf3");
+    skyGrad.addColorStop(1,"#dff6ff");
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0,0,400,600);
+
+    /* TEXTURED SUN WITH ATMOSPHERIC GLOW */
+    let sunX = 330, sunY = 90, sunRadius = 32;
+    let sunGlow = ctx.createRadialGradient(sunX, sunY, sunRadius * 0.6, sunX, sunY, sunRadius * 2.5);
+    sunGlow.addColorStop(0, "rgba(255, 234, 0, 0.45)");
+    sunGlow.addColorStop(0.4, "rgba(255, 165, 0, 0.15)");
+    sunGlow.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = sunGlow;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    let sunCore = ctx.createRadialGradient(sunX - 5, sunY - 5, 2, sunX, sunY, sunRadius);
+    sunCore.addColorStop(0, "#ffffff");
+    sunCore.addColorStop(0.2, "#ffea00");
+    sunCore.addColorStop(1, "#ff9100");
+    ctx.fillStyle = sunCore;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* 3D VOLUMETRIC CLOUDS WITH REAL SHADOWING */
+    clouds.forEach(c=>{
+        let baseR = 20 * c.s;
+        
+        ctx.fillStyle = "rgba(138, 198, 206, 0.6)";
+        ctx.beginPath();
+        ctx.arc(c.x, c.y + 4, baseR, 0, Math.PI*2);
+        ctx.arc(c.x + baseR * 1.1, c.y + 6, baseR * 1.25, 0, Math.PI*2);
+        ctx.arc(c.x + baseR * 2.2, c.y + 4, baseR * 0.9, 0, Math.PI*2);
+        ctx.fill();
+
+        let cloudGrad = ctx.createLinearGradient(c.x, c.y - baseR, c.x, c.y + baseR);
+        cloudGrad.addColorStop(0, "#ffffff");
+        cloudGrad.addColorStop(0.7, "#f5fbfd");
+        cloudGrad.addColorStop(1, "#d5e8ed");
+        ctx.fillStyle = cloudGrad;
+
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, baseR, 0, Math.PI*2);
+        ctx.arc(c.x + baseR * 1.1, c.y + 2, baseR * 1.25, 0, Math.PI*2);
+        ctx.arc(c.x + baseR * 2.2, c.y, baseR * 0.9, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    /* ADVANCED 3D PIPES TEXTURING */
+    pipes.forEach(p=>{
+        let mainGrad = ctx.createLinearGradient(p.x, 0, p.x + pipeWidth, 0);
+        mainGrad.addColorStop(0, "#19591e");   
+        mainGrad.addColorStop(0.2, "#2aa837"); 
+        mainGrad.addColorStop(0.5, "#72e57e"); 
+        mainGrad.addColorStop(0.7, "#2aa837"); 
+        mainGrad.addColorStop(1, "#0f3d13");   
+
+        ctx.fillStyle = mainGrad;
+
+        // Shafts
+        ctx.fillRect(p.x + 4, 0, pipeWidth - 8, p.top);
+        ctx.fillRect(p.x + 4, p.bottom, pipeWidth - 8, 600 - p.bottom);
+
+        // Borders
+        ctx.strokeStyle = "#09240b";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p.x + 4, -5, pipeWidth - 8, p.top + 5);
+        ctx.strokeRect(p.x + 4, p.bottom, pipeWidth - 8, 600 - p.bottom);
+
+        // Pipe Lip Caps
+        let capHeight = 24;
+        let capX = p.x;
+        let capW = pipeWidth;
+        let topCapY = p.top - capHeight;
+        let botCapY = p.bottom;
+
+        ctx.fillRect(capX, topCapY, capW, capHeight);
+        ctx.strokeRect(capX, topCapY, capW, capHeight);
+        ctx.fillRect(capX, botCapY, capW, capHeight);
+        ctx.strokeRect(capX, botCapY, capW, capHeight);
+
+        // Highlights
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fillRect(p.x + 16, 0, 4, p.top);
+        ctx.fillRect(p.x + 16, p.bottom, 4, 600 - p.bottom);
+        ctx.fillRect(p.x + 16, topCapY + 2, 4, capHeight - 4);
+        ctx.fillRect(p.x + 16, botCapY + 2, 4, capHeight - 4);
+    });
+
+    /* HIGHLY DETAILED RETRO GROUND TEXTURING (ANIMATED / SCROLLING) */
+    // Base soil block background
+    let dirtGrad = ctx.createLinearGradient(0, 560, 0, 600);
+    dirtGrad.addColorStop(0, "#cc9966");
+    dirtGrad.addColorStop(1, "#996633");
+    ctx.fillStyle = dirtGrad;
+    ctx.fillRect(0, 560, 400, 40);
+
+    // Soil Cross-hatch Matrix lines (Rendered with current ground offset for movement)
+    ctx.strokeStyle = "#b37746";
+    ctx.lineWidth = 3;
+    for(let i = -24; i < 440; i += 24){
+        let targetX = i + groundOffset;
+        ctx.beginPath();
+        ctx.moveTo(targetX, 568); ctx.lineTo(targetX + 10, 578);
+        ctx.moveTo(targetX + 12, 584); ctx.lineTo(targetX + 22, 594);
+        ctx.stroke();
+    }
+
+    // Shadow line directly under grass block
+    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+    ctx.fillRect(0, 560, 400, 5);
+
+    // Dynamic Layered Grass Trim Base
+    ctx.fillStyle = "#5c9e32"; 
+    ctx.fillRect(0, 548, 400, 12);
+
+    // Bright retro grass blades points (Rendered with offset for movement)
+    ctx.fillStyle = "#73bf37"; 
+    ctx.beginPath();
+    ctx.moveTo(0, 560);
+    for (let x = -8; x <= 416; x += 8) {
+        let targetGrassX = x + (groundOffset % 8);
+        ctx.lineTo(targetGrassX, 548);
+        ctx.lineTo(targetGrassX + 4, 554);
+    }
+    ctx.lineTo(400, 560);
+    ctx.closePath();
+    ctx.fill();
+
+    // Dark separation border line between grass and world view
+    ctx.strokeStyle = "#39641e";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 548);
+    ctx.lineTo(400, 548);
+    ctx.stroke();
+
+
+    /* BIRD */
+    ctx.save();
+    ctx.translate(bird.x + bird.size/2, bird.y + bird.size/2);
+    
+    let targetRotation = Math.min(Math.max(bird.v * 0.07, -0.6), 1.1);
+    ctx.rotate(targetRotation);
+
+    let float = Math.sin(Date.now()/120)*2;
+
+    ctx.fillStyle="#ffd84d";
+    ctx.beginPath();
+    ctx.ellipse(0, float, bird.size/2, bird.size/2.3, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    /* Wing */
+    ctx.fillStyle="#ff9f1c";
+    ctx.beginPath();
+    ctx.ellipse(-6, float + Math.sin(Date.now()/80)*3, 10, 7, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    /* Tail */
+    ctx.beginPath();
+    ctx.moveTo(-14, float);
+    ctx.lineTo(-28, float-6);
+    ctx.lineTo(-28, float+6);
+    ctx.fill();
+
+    /* Eye */
+    ctx.fillStyle="white";
+    ctx.beginPath();
+    ctx.arc(6,float-5,4,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle="black";
+    ctx.beginPath();
+    ctx.arc(7,float-5,2,0,Math.PI*2);
+    ctx.fill();
+
+    /* Beak */
+    ctx.fillStyle="orange";
+    ctx.beginPath();
+    ctx.moveTo(10,float);
+    ctx.lineTo(18,float+2);
+    ctx.lineTo(10,float+5);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function loop(){
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+
+function flap(){
+    if(running) {
+        bird.v = flapPower;
+    }
+}
+
+document.addEventListener("keydown",e=>{
+    if(e.code==="Space" || e.code==="ArrowUp") {
+        flap();
+        e.preventDefault(); 
+    }
+});
+
+canvas.addEventListener("mousedown", flap);
+canvas.addEventListener("touchstart", (e) => {
+    flap();
+    e.preventDefault();
+});
+
+function end(){
+    if(!running) return;
+    running=false;
+    
+    document.getElementById("gameOver").style.display="block";
+    canvas.style.animation = "shake 0.2s";
+    setTimeout(()=>canvas.style.animation="",200);
+}
+
+function restart(){
+    reset();
+}
+</script>
+
+</body>
+</html>
